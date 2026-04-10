@@ -1,4 +1,60 @@
 {
-  "updated_at": "2026-04-11T00:27:51.342968+07:00",
-  "komoditas": []
+  "updated_at": "2026-04-11T00:30:21.581011+07:00",
+  "komoditas": [
+    {
+      "nama": "Bawang Merah",
+      "harga": 38000,
+      "selisih": 0,
+      "pasar": {
+        "sunter": 37800,
+        "senen": 38200,
+        "kramat": 38000,
+        "minggu": 38500
+      }
+    },
+    {
+      "nama": "Bawang Putih",
+      "harga": 42000,
+      "selisih": 0,
+      "pasar": {
+        "sunter": 41800,
+        "senen": 42200,
+        "kramat": 42000,
+        "minggu": 42500
+      }
+    },
+    {
+      "nama": "Beras IR 42/Pera",
+      "harga": 15720,
+      "selisih": -922,
+      "pasar": {
+        "sunter": 15500,
+        "senen": 15800,
+        "kramat": 15600,
+        "minggu": 15900
+      }
+    },
+    {
+      "nama": "Beras Setra I/Premium",
+      "harga": 15806,
+      "selisih": -1056,
+      "pasar": {
+        "sunter": 15600,
+        "senen": 16050,
+        "kramat": 15700,
+        "minggu": 15900
+      }
+    },
+    {
+      "nama": "Cabe Merah Keriting",
+      "harga": 47333,
+      "selisih": 1045,
+      "pasar": {
+        "sunter": 46500,
+        "senen": 47800,
+        "kramat": 47000,
+        "minggu": 48700
+      }
+    }
+  ]
 }
