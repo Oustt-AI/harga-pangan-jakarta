@@ -1,7 +1,7 @@
 name: Update Harga
 on:
   schedule:
-    - cron: '0 20 * *' # 03:00 WIB
+    - cron: '0 20 * * *'  # 03:00 WIB
   workflow_dispatch:
 
 permissions:
@@ -16,7 +16,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install playwright pytz
-      - run: playwright install chromium
+      - run: playwright install --with-deps chromium
       - run: python scraper.py
       - name: Commit
         run: |
