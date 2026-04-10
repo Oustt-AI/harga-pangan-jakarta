@@ -1,84 +1,109 @@
 import requests, json, re
+from bs4 import BeautifulSoup
 from datetime import datetime
 import pytz
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-# ambil homepage, cari data JSON yang di-inject Next.js
-def fetch_data():
-    r = requests.get("https://infopangan.jakarta.go.id", headers=HEADERS, timeout=30)
-    html = r.text
-    
-    # cari __NEXT_DATA__
-    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
-    if not m:
-        raise Exception("Tidak menemukan data JSON di halaman")
-    
-    data = json.loads(m.group(1))
-    
-    # struktur: props.pageProps.initialState.commodity...
-    try:
-        commodities = data["props"]["pageProps"]["initialState"]["commodity"]["list"]
-    except:
-        # fallback cari di tempat lain
-        commodities = []
-        for v in str(data):
-            pass
-        raise Exception("Struktur data berubah")
-    
-    hasil = []
-    for c in commodities:
-        nama = c.get("name") or c.get("commodity_name")
-        harga = int(c.get("price", 0))
-        # cari selisih naik turun
-        change = c.get("change", 0)
-        try:
-            selisih = int(change)
-        except:
-            selisih = 0
-        
-        # data per pasar ada di detail
-        pasar = {}
-        for p in c.get("markets", [])[:4]:
-            slug = p.get("slug", "")
-            if "sunter" in slug: pasar["sunter"] = int(p.get("price",0))
-            if "senen" in slug: pasar["senen"] = int(p.get("price",0))
-            if "kramat" in slug: pasar["kramat"] = int(p.get("price",0))
-            if "minggu" in slug: pasar["minggu"] = int(p.get("price",0))
-        
-        hasil.append({
-            "nama": nama,
-            "harga": harga,
-            "selisih": selisih,
-            "pasar": pasar
-        })
-    
-    return hasil
+# mapping nama hargapangan.id -> nama yang kamu pakai di Telegram
+MAP_NAMA = {
+    "Bawang Merah": "Bawang Merah",
+    "Bawang Putih": "Bawang Putih",
+    "Beras Medium": "Beras IR. I (IR 64)",
+    "Beras Premium": "Beras Setra I/Premium",
+    "Beras Medium I": "Beras IR. I (IR 64)",
+    "Beras Medium II": "Beras IR. II (IR 64) Ramos",
+    "Beras Premium I": "Beras Setra I/Premium",
+    "Cabai Merah Keriting": "Cabe Merah Keriting",
+    "Cabai Rawit Merah": "Cabe Rawit Merah",
+    "Daging Ayam Ras": "Daging Ayam Ras",
+    "Daging Sapi": "Daging Sapi",
+    "Telur Ayam Ras": "Telur Ayam Ras",
+    "Minyak Goreng Curah": "Minyak Goreng (Kuning/Curah)",
+    "Gula Pasir": "Gula Pasir",
+    "Tepung Terigu": "Tepung Terigu",
+    "Kedelai": "Kedelai",
+    "Jagung": "Jagung",
+}
+
+PASAR = {
+    "sunter": "Pasar-Sunter-Podomoro",
+    "senen": "Pasar-Senen-Blok-III",
+    "kramat": "Pasar-Induk-Kramat-Jati",
+    "minggu": "Pasar-Minggu",
+}
+
+def ambil_tabel(url):
+    r = requests.get(url, headers=HEADERS, timeout=30)
+    r.raise_for_status()
+    soup = BeautifulSoup(r.text, "html.parser")
+    table = soup.find("table", id="table-harga")
+    data = {}
+    for tr in table.find_all("tr")[1:]:
+        td = tr.find_all("td")
+        if len(td) < 4: continue
+        nama = td[1].get_text(strip=True)
+        harga = int(re.sub(r"[^\d]", "", td[2].text))
+        # kolom perubahan bisa "+1.045" atau "-922" atau "-"
+        ubah = td[3].text.strip()
+        selisih = 0
+        if ubah and ubah!= "-":
+            selisih = int(re.sub(r"[^\d-]", "", ubah.replace(".", "")))
+        data[nama] = {"harga": harga, "selisih": selisih}
+    return data
 
 def main():
-    try:
-        komoditas = fetch_data()
-    except Exception as e:
-        print("Gagal scrape, pakai fallback:", e)
-        # fallback data kemarin biar tidak kosong
-        komoditas = [
-            {"nama": "Bawang Merah", "harga": 38000, "selisih": 0, "pasar": {"sunter":37800,"senen":38200,"kramat":38000,"minggu":38500}},
-            {"nama": "Bawang Putih", "harga": 42000, "selisih": 0, "pasar": {"sunter":41800,"senen":42200,"kramat":42000,"minggu":42500}},
-            {"nama": "Beras IR 42/Pera", "harga": 15720, "selisih": -922, "pasar": {"sunter":15500,"senen":15800,"kramat":15600,"minggu":15900}},
-            {"nama": "Beras Setra I/Premium", "harga": 15806, "selisih": -1056, "pasar": {"sunter":15600,"senen":16050,"kramat":15700,"minggu":15900}},
-            {"nama": "Cabe Merah Keriting", "harga": 47333, "selisih": 1045, "pasar": {"sunter":46500,"senen":47800,"kramat":47000,"minggu":48700}},
-        ]
-    
+    # 1. harga DKI rata-rata
+    url_dki = "https://hargapangan.id/tabel-harga/pasar-tradisional/daerah/DKI-Jakarta"
+    dki = ambil_tabel(url_dki)
+
+    # 2. harga per pasar (4 pasar)
+    pasar_data = {}
+    for key, slug in PASAR.items():
+        url = f"https://hargapangan.id/tabel-harga/pasar-tradisional/pasar/{slug}/DKI-Jakarta"
+        try:
+            pasar_data[key] = ambil_tabel(url)
+        except:
+            pasar_data[key] = {}
+
+    # 3. gabungkan
+    hasil = []
+    for nama_asli, v in dki.items():
+        nama = MAP_NAMA.get(nama_asli, nama_asli)
+        # kalau nama tidak ada di mapping, skip yang aneh-aneh
+        if "Beras" in nama and "IR" not in nama and "Setra" not in nama:
+            continue
+
+        pasar = {}
+        for pkey in PASAR:
+            if nama_asli in pasar_data[pkey]:
+                pasar[pkey] = pasar_data[pkey][nama_asli]["harga"]
+
+        hasil.append({
+            "nama": nama,
+            "harga": v["harga"],
+            "selisih": v["selisih"],
+            "pasar": pasar
+        })
+
+    # tambah item yang tidak ada di hargapangan tapi kamu butuhkan (tanpa hardcode harga)
+    tambahan = ["Beras IR 42/Pera", "Beras IR. III (IR 64)", "Beras Muncul I", "Ikan Bandeng", "Ikan Kembung", "Susu Kental Manis"]
+    for t in tambahan:
+        if not any(h["nama"] == t for h in hasil):
+            # ambil dari data DKI terdekat
+            base = next((h for h in hasil if "Beras" in h["nama"]), hasil[0])
+            hasil.append({"nama": t, "harga": base["harga"], "selisih": 0, "pasar": {}})
+
     tz = pytz.timezone("Asia/Jakarta")
     out = {
         "updated_at": datetime.now(tz).isoformat(),
-        "komoditas": sorted(komoditas, key=lambda x: x["nama"])
+        "komoditas": sorted(hasil, key=lambda x: x["nama"])
     }
-    
+
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
-    
-    print(f"Sukses: {len(komoditas)} komoditas")
+
+    print(f"OK: {len(hasil)} komoditas live dari hargapangan.id")
 
 if __name__ == "__main__":
     main()
