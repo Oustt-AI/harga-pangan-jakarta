@@ -1,4 +1,4 @@
-import json, re
+import json
 from datetime import datetime
 import pytz
 from playwright.sync_api import sync_playwright
@@ -11,66 +11,56 @@ def scrape():
         page = browser.new_page(user_agent="Mozilla/5.0")
         page.goto(URL, wait_until="networkidle", timeout=60000)
         
-        # ambil data JSON yang disuntik Next.js
-        next_data = page.evaluate("() => window.__NEXT_DATA__")
+        # ambil data Next.js yang sama dipakai website
+        data = page.evaluate("() => window.__NEXT_DATA__")
         browser.close()
     
-    # struktur data ada di props.pageProps
-    props = next_data["props"]["pageProps"]
+    props = data["props"]["pageProps"]
     
-    # cari list komoditas (nama bisa berubah, kita cari yang ada 'price')
-    komoditas = []
-    # biasanya di initialState.commodity.list atau di props.commodities
+    # cari list komoditas - struktur bisa berubah, kita coba 2 lokasi
     try:
-        raw = props["initialState"]["commodity"]["list"]
+        items = props["initialState"]["commodity"]["list"]
     except:
-        # fallback cari di semua props
-        raw = []
-        for v in str(props):
-            pass
-        # jika tidak ketemu, cari di halaman lain
-        raw = props.get("commodities", [])
+        items = props.get("commodities", [])
     
-    for item in raw:
-        nama = item.get("name") or item.get("commodity_name") or item.get("komoditas")
-        harga = int(item.get("price", item.get("harga", 0)))
-        # selisih bisa positif/negatif
-        selisih = int(item.get("change", item.get("selisih", 0)) or 0)
+    hasil = []
+    for it in items:
+        nama = it.get("name") or it.get("commodity_name")
+        harga = int(it.get("price") or it.get("harga") or 0)
+        selisih = int(it.get("change") or it.get("selisih") or 0)
         
-        # harga per pasar
         pasar = {}
-        for m in item.get("markets", [])[:10]:
+        for m in it.get("markets", []):
             slug = m.get("slug", "").lower()
-            if "sunter" in slug: pasar["sunter"] = int(m.get("price",0))
-            if "senen" in slug: pasar["senen"] = int(m.get("price",0))
-            if "kramat" in slug: pasar["kramat"] = int(m.get("price",0))
-            if "minggu" in slug: pasar["minggu"] = int(m.get("price",0))
+            price = int(m.get("price", 0))
+            if "sunter" in slug: pasar["sunter"] = price
+            if "senen" in slug: pasar["senen"] = price
+            if "kramat" in slug: pasar["kramat"] = price
+            if "minggu" in slug: pasar["minggu"] = price
         
         if nama and harga > 0:
-            komoditas.append({
+            hasil.append({
                 "nama": nama,
                 "harga": harga,
                 "selisih": selisih,
                 "pasar": pasar
             })
     
-    return komoditas
+    if not hasil:
+        raise Exception("Data kosong dari infopangan")
+    
+    return hasil
 
 def main():
-    data = scrape()
-    if not data:
-        raise Exception("Gagal ambil data dari infopangan")
-    
+    komoditas = scrape()
     tz = pytz.timezone("Asia/Jakarta")
     out = {
         "updated_at": datetime.now(tz).isoformat(),
-        "komoditas": sorted(data, key=lambda x: x["nama"])
+        "komoditas": sorted(komoditas, key=lambda x: x["nama"])
     }
-    
     with open("data.json", "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, indent=2)
-    
-    print(f"Sukses: {len(data)} komoditas dari infopangan.jakarta.go.id")
+    print(f"OK: {len(komoditas)} komoditas live")
 
 if __name__ == "__main__":
     main()
